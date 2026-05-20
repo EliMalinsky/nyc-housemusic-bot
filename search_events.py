@@ -75,7 +75,7 @@ Search across: Resident Advisor (ra.co), venue websites, promoter Instagram and 
 Return ONLY valid JSON with no preamble, explanation, or markdown formatting."""
 
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-5",
         max_tokens=4000,
         tools=[{"type": "web_search_20250305", "name": "web_search"}],
         messages=[{"role": "user", "content": prompt}]
