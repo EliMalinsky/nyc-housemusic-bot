@@ -2,6 +2,7 @@ import anthropic
 import resend
 import json
 from datetime import datetime, timedelta
+import time
 import os
 
 TO_EMAIL = "eli@elimalinsky.com"
@@ -30,7 +31,6 @@ def parse_event_date(date_str):
     return None
 
 def extract_json(text):
-    """Extract a JSON array from text, trying multiple strategies."""
     text = text.strip().replace("```json","").replace("```","").strip()
     s, e = text.find("["), text.rfind("]") + 1
     if s != -1 and e > s:
@@ -38,7 +38,25 @@ def extract_json(text):
             return json.loads(text[s:e])
         except:
             pass
-    return None
+    return []
+
+def ask_claude(client, query, today, dates_str):
+    """Ask Claude to find events for a specific search query."""
+    prompt = f"""Today is {today.strftime("%B %-d, %Y")}. Search the web for: {query}
+
+Find any NYC daytime events (starting before 8pm) on these weekend dates: {dates_str}
+
+Return ONLY a JSON array of events found. If none found, return [].
+Each event: {{"name":"...","date":"Saturday, May 24, 2026","start_time":"3:00 PM","venue":"...","neighborhood":"...","is_outdoor":"true/false/unknown","artists":"...","description":"1 sentence","link":"...","priority":"high"}}"""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=2000,
+        tools=[{"type": "web_search_20250305", "name": "web_search"}],
+        messages=[{"role": "user", "content": prompt}]
+    )
+    text = "".join(b.text for b in response.content if hasattr(b, "text"))
+    return extract_json(text)
 
 def search_events():
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
@@ -46,79 +64,39 @@ def search_events():
     upcoming = get_upcoming_weekend_dates()
     dates_str = ", ".join(d.strftime("%A %B %-d %Y") for d in upcoming)
 
-    # Step 1: search for events
-    search_prompt = f"""Today is {today.strftime("%B %-d, %Y")}.
+    # Specific targeted searches
+    queries = [
+        "Mister Sunday Nowadays NYC upcoming schedule 2026",
+        "718 Sessions NYC upcoming events 2026",
+        "Public Records NYC outdoor daytime events 2026",
+        "Knockdown Center NYC daytime events 2026",
+        "Soul in the Horn NYC upcoming 2026",
+        "Resident Advisor ra.co NYC daytime outdoor dance events May June 2026",
+        "Danny Krivit OR Theo Parrish OR Moodymann NYC 2026",
+        "Timmy Regisford OR Louie Vega OR Joe Claussell NYC 2026",
+    ]
 
-Search for NYC daytime dance music events happening on these dates: {dates_str}
+    all_events = []
+    seen = set()
 
-Search these sources:
-- ra.co/events/us/newyork (filter to daytime/afternoon)
-- dice.fm NYC events
-- Nowadays NYC schedule
-- Public Records NYC schedule
-- Knockdown Center schedule
-- 718 Sessions upcoming events
-- Mister Sunday at Nowadays
-- Brooklyn Bridge Park events
-- Prospect Park events
-
-Also search: "Danny Krivit NYC", "Theo Parrish NYC", "Moodymann NYC", "Timmy Regisford NYC", "Louie Vega NYC", "Joe Claussell NYC", "Eamon Harkin NYC", "Justin Carter NYC", "Soul Summit NYC"
-
-Rules: only events in NYC, starting before 8pm, on one of the listed dates, involving dance music.
-
-You MUST respond with ONLY a JSON array. Start your response with [ and end with ]. No text before or after.
-
-Each object must have these exact fields:
-name, date, start_time, venue, neighborhood, is_outdoor, artists, description, link, priority
-
-Example format:
-[{{"name":"Event Name","date":"Saturday, May 24, 2026","start_time":"3:00 PM","venue":"Venue Name","neighborhood":"Brooklyn","is_outdoor":"true","artists":"DJ Name","description":"One sentence.","link":"https://example.com","priority":"high"}}]
-
-If you find no events, return an empty array: []"""
-
-    response = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=4000,
-        tools=[{"type": "web_search_20250305", "name": "web_search"}],
-        messages=[{"role": "user", "content": search_prompt}]
-    )
-
-    full_text = ""
-    for block in response.content:
-        if hasattr(block, "text"):
-            full_text += block.text
-
-    print("Raw preview:", full_text[:400])
-
-    events = extract_json(full_text)
-
-    # Step 2: if Claude didn't return JSON, ask it to reformat
-    if events is None:
-        print("JSON not found, asking Claude to reformat...")
-        reformat_response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=4000,
-            messages=[
-                {"role": "user", "content": search_prompt},
-                {"role": "assistant", "content": full_text},
-                {"role": "user", "content": "Please reformat your findings as a pure JSON array only. Start with [ and end with ]. No other text."}
-            ]
-        )
-        reformat_text = ""
-        for block in reformat_response.content:
-            if hasattr(block, "text"):
-                reformat_text += block.text
-        print("Reformat preview:", reformat_text[:400])
-        events = extract_json(reformat_text)
-
-    if events is None:
-        print("Could not parse events.")
-        events = []
+    for i, query in enumerate(queries):
+        if i > 0:
+            time.sleep(10)  # small pause between searches
+        print(f"Searching: {query[:60]}...")
+        try:
+            results = ask_claude(client, query, today, dates_str)
+            for e in results:
+                key = (e.get("name","").lower().strip(), e.get("date","").strip())
+                if key not in seen and key[0]:
+                    seen.add(key)
+                    all_events.append(e)
+        except Exception as ex:
+            print(f"Search error: {ex}")
 
     # Filter past events
-    events = [e for e in events if (parse_event_date(e.get("date","")) or today) >= today]
-    print(f"Found {len(events)} future events.")
-    return events
+    all_events = [e for e in all_events if (parse_event_date(e.get("date","")) or today) >= today]
+    print(f"Found {len(all_events)} total future events.")
+    return all_events
 
 def sort_key(e):
     d = parse_event_date(e.get("date","")) or datetime.max.date()
