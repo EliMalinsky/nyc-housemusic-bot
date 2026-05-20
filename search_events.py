@@ -2,7 +2,6 @@ import anthropic
 import resend
 import json
 from datetime import datetime, timedelta
-import time
 import os
 
 TO_EMAIL = "eli@elimalinsky.com"
@@ -38,65 +37,72 @@ def extract_json(text):
             return json.loads(text[s:e])
         except:
             pass
-    return []
-
-def ask_claude(client, query, today, dates_str):
-    """Ask Claude to find events for a specific search query."""
-    prompt = f"""Today is {today.strftime("%B %-d, %Y")}. Search the web for: {query}
-
-Find any NYC daytime events (starting before 8pm) on these weekend dates: {dates_str}
-
-Return ONLY a JSON array of events found. If none found, return [].
-Each event: {{"name":"...","date":"Saturday, May 24, 2026","start_time":"3:00 PM","venue":"...","neighborhood":"...","is_outdoor":"true/false/unknown","artists":"...","description":"1 sentence","link":"...","priority":"high"}}"""
-
-    response = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=2000,
-        tools=[{"type": "web_search_20250305", "name": "web_search"}],
-        messages=[{"role": "user", "content": prompt}]
-    )
-    text = "".join(b.text for b in response.content if hasattr(b, "text"))
-    return extract_json(text)
+    return None
 
 def search_events():
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     today = datetime.today().date()
     upcoming = get_upcoming_weekend_dates()
-    dates_str = ", ".join(d.strftime("%A %B %-d %Y") for d in upcoming)
+    dates_str = ", ".join(d.strftime("%A, %B %-d, %Y") for d in upcoming)
 
-    # Specific targeted searches
-    queries = [
-        "Mister Sunday Nowadays NYC upcoming schedule 2026",
-        "718 Sessions NYC upcoming events 2026",
-        "Public Records NYC outdoor daytime events 2026",
-        "Knockdown Center NYC daytime events 2026",
-        "Soul in the Horn NYC upcoming 2026",
-        "Resident Advisor ra.co NYC daytime outdoor dance events May June 2026",
-        "Danny Krivit OR Theo Parrish OR Moodymann NYC 2026",
-        "Timmy Regisford OR Louie Vega OR Joe Claussell NYC 2026",
-    ]
+    prompt = f"""Today is {today.strftime("%A, %B %-d, %Y")}.
 
-    all_events = []
-    seen = set()
+Search for NYC daytime dance music events on ALL of these weekend dates — search each date individually, not just the nearest one:
+{dates_str}
 
-    for i, query in enumerate(queries):
-        if i > 0:
-            time.sleep(10)  # small pause between searches
-        print(f"Searching: {query[:60]}...")
-        try:
-            results = ask_claude(client, query, today, dates_str)
-            for e in results:
-                key = (e.get("name","").lower().strip(), e.get("date","").strip())
-                if key not in seen and key[0]:
-                    seen.add(key)
-                    all_events.append(e)
-        except Exception as ex:
-            print(f"Search error: {ex}")
+Search these sources:
+- ra.co/events/us/newyork
+- dice.fm NYC
+- Nowadays NYC (nowadaysnyc.com)
+- Public Records NYC
+- Knockdown Center
+- 718 Sessions
+- Mister Sunday
+- Brooklyn Bridge Park events
+- Prospect Park events
+- Soul in the Horn
 
-    # Filter past events
-    all_events = [e for e in all_events if (parse_event_date(e.get("date","")) or today) >= today]
-    print(f"Found {len(all_events)} total future events.")
-    return all_events
+Also search for NYC weekend appearances by: Danny Krivit, Theo Parrish, Moodymann, Timmy Regisford, Louie Vega, Joe Claussell, Eamon Harkin, Justin Carter, Soul Summit, Francois K, DJ Spinna
+
+Only include events that: start before 8pm, are in NYC, are on one of the listed dates, involve dance music (house/disco/soul/funk/electronic — interpret broadly).
+
+Return ONLY a JSON array. No text before or after. Start with [ and end with ].
+
+Each object must have: name, date (format: "Saturday, May 24, 2026"), start_time, venue, neighborhood, is_outdoor (true/false/unknown), artists, description (1 sentence), link, priority (high if matches a listed DJ/venue, else normal).
+
+If you find no events return []."""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=4000,
+        tools=[{"type": "web_search_20250305", "name": "web_search"}],
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    full_text = "".join(b.text for b in response.content if hasattr(b, "text"))
+    print("Preview:", full_text[:300])
+
+    events = extract_json(full_text)
+
+    # Fallback: ask Claude to reformat if it returned prose
+    if events is None:
+        print("Reformatting...")
+        reformat = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=4000,
+            messages=[
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": full_text},
+                {"role": "user", "content": "Output ONLY the JSON array of events. Start with [ and end with ]. No other text."}
+            ]
+        )
+        reformat_text = "".join(b.text for b in reformat.content if hasattr(b, "text"))
+        print("Reformat preview:", reformat_text[:300])
+        events = extract_json(reformat_text) or []
+
+    events = [e for e in events if (parse_event_date(e.get("date","")) or today) >= today]
+    print(f"Found {len(events)} future events.")
+    return events
 
 def sort_key(e):
     d = parse_event_date(e.get("date","")) or datetime.max.date()
