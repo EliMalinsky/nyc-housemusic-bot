@@ -129,7 +129,10 @@ def search_events():
     all_events = []
     seen = set()
 
-    for focus in searches:
+    for i, focus in enumerate(searches):
+        if i > 0:
+            import time
+            time.sleep(60)  # wait 60 seconds between searches to avoid rate limits
         print(f"Running search: {focus[:60]}...")
         results = run_search(client, focus, date_range, weekend_dates_str)
         for e in results:
