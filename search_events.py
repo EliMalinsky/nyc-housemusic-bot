@@ -57,7 +57,9 @@ def search_events():
 
     prompt = f"""Today is {today.strftime("%A, %B %-d, %Y")}.
 
-Search for NYC daytime dance music events on these upcoming weekend dates: {weekend_dates_str}
+Search for NYC daytime dance music events on ALL of these upcoming weekend dates. You must search for events on EACH date, not just the nearest ones: {weekend_dates_str}
+
+Important: search specifically for events 2, 3, and 4 weeks from now, not just this weekend.
 
 Search these sources thoroughly:
 1. ra.co (Resident Advisor) - search NYC events filtered to daytime
