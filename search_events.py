@@ -29,29 +29,58 @@ def parse_event_date(date_str):
             continue
     return None
 
+def extract_json(text):
+    """Extract a JSON array from text, trying multiple strategies."""
+    text = text.strip().replace("```json","").replace("```","").strip()
+    s, e = text.find("["), text.rfind("]") + 1
+    if s != -1 and e > s:
+        try:
+            return json.loads(text[s:e])
+        except:
+            pass
+    return None
+
 def search_events():
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     today = datetime.today().date()
     upcoming = get_upcoming_weekend_dates()
-    dates_str = ", ".join(d.strftime("%A %B %-d") for d in upcoming)
+    dates_str = ", ".join(d.strftime("%A %B %-d %Y") for d in upcoming)
 
-    prompt = f"""Today is {today.strftime("%B %-d, %Y")}. Search for NYC daytime dance music events on: {dates_str}
+    # Step 1: search for events
+    search_prompt = f"""Today is {today.strftime("%B %-d, %Y")}.
 
-Search: ra.co/events/us/newyork, dice.fm, Nowadays, Public Records, Knockdown Center, 718 Sessions, Mister Sunday, Soul in the Horn, Shelter NYC, Brooklyn Bridge Park, Prospect Park events.
+Search for NYC daytime dance music events happening on these dates: {dates_str}
 
-Also search for NYC events featuring: Danny Krivit, Theo Parrish, Moodymann, Timmy Regisford, Louie Vega, Joe Claussell, Francois K, DJ Spinna, Eamon Harkin, Justin Carter, Soul Summit, Tony Humphries.
+Search these sources:
+- ra.co/events/us/newyork (filter to daytime/afternoon)
+- dice.fm NYC events
+- Nowadays NYC schedule
+- Public Records NYC schedule
+- Knockdown Center schedule
+- 718 Sessions upcoming events
+- Mister Sunday at Nowadays
+- Brooklyn Bridge Park events
+- Prospect Park events
 
-Include only events that: start before 8pm, are on a listed date, are in NYC, involve dance music (house/disco/soul/funk/electronic).
+Also search: "Danny Krivit NYC", "Theo Parrish NYC", "Moodymann NYC", "Timmy Regisford NYC", "Louie Vega NYC", "Joe Claussell NYC", "Eamon Harkin NYC", "Justin Carter NYC", "Soul Summit NYC"
 
-Return a JSON array. Each item: name, date (e.g. "Saturday, May 24, 2026"), start_time, venue, neighborhood, is_outdoor (true/false/unknown), artists, description (1 sentence), link, priority (high if matches above DJ or venue, else normal).
+Rules: only events in NYC, starting before 8pm, on one of the listed dates, involving dance music.
 
-JSON only, no markdown."""
+You MUST respond with ONLY a JSON array. Start your response with [ and end with ]. No text before or after.
+
+Each object must have these exact fields:
+name, date, start_time, venue, neighborhood, is_outdoor, artists, description, link, priority
+
+Example format:
+[{{"name":"Event Name","date":"Saturday, May 24, 2026","start_time":"3:00 PM","venue":"Venue Name","neighborhood":"Brooklyn","is_outdoor":"true","artists":"DJ Name","description":"One sentence.","link":"https://example.com","priority":"high"}}]
+
+If you find no events, return an empty array: []"""
 
     response = client.messages.create(
         model="claude-sonnet-4-5",
         max_tokens=4000,
         tools=[{"type": "web_search_20250305", "name": "web_search"}],
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": search_prompt}]
     )
 
     full_text = ""
@@ -59,18 +88,36 @@ JSON only, no markdown."""
         if hasattr(block, "text"):
             full_text += block.text
 
-    print("Preview:", full_text[:200])
+    print("Raw preview:", full_text[:400])
 
-    try:
-        clean = full_text.strip().replace("```json","").replace("```","").strip()
-        s, e = clean.find("["), clean.rfind("]") + 1
-        events = json.loads(clean[s:e]) if s != -1 and e > s else []
-    except Exception as ex:
-        print(f"Parse error: {ex}")
+    events = extract_json(full_text)
+
+    # Step 2: if Claude didn't return JSON, ask it to reformat
+    if events is None:
+        print("JSON not found, asking Claude to reformat...")
+        reformat_response = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=4000,
+            messages=[
+                {"role": "user", "content": search_prompt},
+                {"role": "assistant", "content": full_text},
+                {"role": "user", "content": "Please reformat your findings as a pure JSON array only. Start with [ and end with ]. No other text."}
+            ]
+        )
+        reformat_text = ""
+        for block in reformat_response.content:
+            if hasattr(block, "text"):
+                reformat_text += block.text
+        print("Reformat preview:", reformat_text[:400])
+        events = extract_json(reformat_text)
+
+    if events is None:
+        print("Could not parse events.")
         events = []
 
+    # Filter past events
     events = [e for e in events if (parse_event_date(e.get("date","")) or today) >= today]
-    print(f"Found {len(events)} events.")
+    print(f"Found {len(events)} future events.")
     return events
 
 def sort_key(e):
