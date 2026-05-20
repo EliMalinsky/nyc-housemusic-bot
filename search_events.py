@@ -130,6 +130,8 @@ def build_html_email(events):
                 if e.get("priority") == "high":
                     badges += ' <span style="background:#fff3cd;color:#856404;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;">⭐ Priority</span>'
                 artists = e.get("artists","")
+                if isinstance(artists, list):
+                    artists = ", ".join(artists)
                 link = e.get("link","")
                 cards.append(f"""<div style="border:1px solid #e0e0e0;border-radius:8px;padding:14px;margin-bottom:10px;background:#fff;">
   <div style="font-size:15px;font-weight:700;color:#111;">{e.get('name','')}{badges}</div>
