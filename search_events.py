@@ -6,7 +6,7 @@ import os
 
 # ── Config ──────────────────────────────────────────────────────────────────
 TO_EMAIL = "eli@elimalinsky.com"
-FROM_EMAIL = "nyc-music-bot@yourdomain.com"  # replace with your verified Resend sender
+FROM_EMAIL = "onboarding@resend.dev"  # replace with your verified Resend sender
 
 DJS = [
     "Moodymann", "Moodyman", "Kenny Dixon Junior", "Theo Parrish", "Rick Wade",
