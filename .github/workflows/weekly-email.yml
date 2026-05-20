@@ -1,0 +1,28 @@
+name: Weekly NYC Music Events Email
+
+on:
+  schedule:
+    - cron: '0 14 * * 3'  # Every Wednesday at 9am ET (14:00 UTC)
+  workflow_dispatch:       # Also allows manual trigger from GitHub UI
+
+jobs:
+  send-email:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install anthropic resend
+
+      - name: Run event search and send email
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: python search_events.py
