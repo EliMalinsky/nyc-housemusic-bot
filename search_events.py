@@ -86,13 +86,27 @@ Return ONLY valid JSON with no preamble, explanation, or markdown formatting."""
         if hasattr(block, "text"):
             full_text += block.text
 
+    print("Raw response preview:")
+    print(full_text[:1000])
+
+    # Try to extract JSON array from anywhere in the response
     try:
         clean = full_text.strip().replace("```json", "").replace("```", "").strip()
-        events = json.loads(clean)
-    except json.JSONDecodeError:
+        # Find the first [ and last ] to extract just the array
+        start = clean.find("[")
+        end = clean.rfind("]") + 1
+        if start != -1 and end > start:
+            json_str = clean[start:end]
+            events = json.loads(json_str)
+            print(f"Successfully parsed {len(events)} events.")
+        else:
+            print("No JSON array found in response.")
+            events = []
+    except json.JSONDecodeError as e:
+        print(f"JSON parse error: {e}")
+        print("Full response:")
+        print(full_text)
         events = []
-        print("Warning: could not parse JSON response. Raw output:")
-        print(full_text[:500])
 
     return events
 
