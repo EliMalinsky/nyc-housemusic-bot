@@ -6,7 +6,7 @@ import os
 
 # ── Config ──────────────────────────────────────────────────────────────────
 TO_EMAIL = "eli@elimalinsky.com"
-FROM_EMAIL = "onboarding@resend.dev"  # replace with your verified Resend sender
+FROM_EMAIL = "onboarding@resend.dev"
 
 DJS = [
     "Moodymann", "Moodyman", "Kenny Dixon Junior", "Theo Parrish", "Rick Wade",
@@ -20,59 +20,73 @@ DJS = [
 VENUES_AND_PROMOTERS = [
     "Public Records", "Shelter", "Soul in the Horn", "Mister Sunday",
     "Nowadays", "718 Sessions", "ReSolute", "Refuge", "Knockdown Center",
-    "Under the K Bridge", "any NYC park", "Prospect Park", "Central Park",
-    "Brooklyn Bridge Park"
+    "Under the K Bridge", "Prospect Park", "Central Park", "Brooklyn Bridge Park"
 ]
 
 # ── Date helpers ─────────────────────────────────────────────────────────────
+def get_upcoming_weekend_dates():
+    """Return list of upcoming Saturday/Sunday dates (from today onwards) for next 4 weekends."""
+    today = datetime.today().date()
+    dates = []
+    d = today
+    while len(dates) < 8:
+        if d.weekday() in (5, 6):
+            dates.append(d)
+        d += timedelta(days=1)
+    return dates
+
 def get_date_range_string():
-    today = datetime.today()
-    end = today + timedelta(weeks=4)
-    return f"{today.strftime('%B %-d')} through {end.strftime('%B %-d, %Y')}"
+    dates = get_upcoming_weekend_dates()
+    start = dates[0].strftime("%B %-d")
+    end = dates[-1].strftime("%B %-d, %Y")
+    return f"{start} through {end}"
+
+def parse_event_date(date_str):
+    """Try to parse a date string into a date object for sorting/filtering."""
+    for fmt in ("%A, %B %d, %Y", "%B %d, %Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(date_str.strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+def is_future_event(date_str):
+    """Return True if event date is today or in the future."""
+    today = datetime.today().date()
+    d = parse_event_date(date_str)
+    return d is not None and d >= today
 
 # ── Claude search ─────────────────────────────────────────────────────────────
-def search_events():
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+def run_search(client, search_focus, date_range, weekend_dates_str):
+    """Run a single targeted search and return raw events list."""
+    prompt = f"""Today's date is {datetime.today().strftime("%A, %B %-d, %Y")}.
 
-    date_range = get_date_range_string()
-    dj_list = ", ".join(DJS)
-    venue_list = ", ".join(VENUES_AND_PROMOTERS)
+Search for upcoming NYC daytime dance music events. I want events on these specific dates ONLY: {weekend_dates_str}
 
-    prompt = f"""Search for upcoming NYC dance music events for the dates: {date_range}.
+SEARCH FOCUS FOR THIS QUERY: {search_focus}
 
-== REQUIRED CRITERIA (every result must meet all of these) ==
+== REQUIRED (every result must meet all of these) ==
 - Located in New York City
-- Takes place on a Saturday, Sunday, or public holiday
-- Starts before 8pm (daytime or early evening events only)
+- Date must be one of the dates listed above (no past events)
+- Starts before 8pm
 
-== GENRE GUIDANCE (interpret broadly, do not use as keyword filters) ==
-I am interested in daytime dance music events in the spirit of house, disco, soul, and Detroit. This includes — but is not limited to — events described as deep, electronic, dance, Afro, Latin, or simply "music." If a well-known DJ from my list is playing, include the event regardless of how the genre is described. If a known venue or promoter from my list is hosting an event, include it regardless of genre description. Use judgment: a Mister Sunday party or a Public Records afternoon event belongs on this list even if it doesn't say "house music."
+== GENRE (interpret broadly) ==
+House, disco, soul, Detroit — but also any daytime dance party, electronic, Afro, Latin. Use judgment: if a known DJ or venue from my lists is involved, include it regardless of how the genre is labeled.
 
-== PREFERRED (prioritize and highlight these, but do not exclude events that lack them) ==
-DJs/artists to watch for: {dj_list}
-
-Venues and promoters to watch for: {venue_list}
-
-Also flag events referencing: soul, disco, detroit, house, daytime, day party, outdoor
-
-I am especially interested in outdoor events (parks, rooftops, open air).
-
-== OUTPUT FORMAT ==
-Return a JSON array. Each object must have these fields:
+== OUTPUT ==
+Return a JSON array. Each object must have:
 - name: event name
-- date: date as "Saturday, June 7, 2025"
-- start_time: e.g. "2:00 PM"
-- venue: venue name
-- neighborhood: NYC neighborhood
+- date: format exactly as "Saturday, June 7, 2026"
+- start_time: e.g. "3:00 PM"
+- venue
+- neighborhood
 - is_outdoor: "true", "false", or "unknown"
-- artists: DJ or artist names as a string
-- description: 1-2 sentence description
-- link: URL for tickets or info (or empty string)
-- priority: "high" if it matches a preferred DJ or venue, otherwise "normal"
+- artists: performing DJs/artists as a string
+- description: 1-2 sentences
+- link: URL or empty string
+- priority: "high" if matches a known DJ/venue from my lists, else "normal"
 
-Search across: Resident Advisor (ra.co), venue websites, promoter Instagram and websites, NYC event listings, and any other relevant sources.
-
-Return ONLY valid JSON with no preamble, explanation, or markdown formatting."""
+Return ONLY a valid JSON array. No explanation, no markdown."""
 
     response = client.messages.create(
         model="claude-sonnet-4-5",
@@ -86,49 +100,91 @@ Return ONLY valid JSON with no preamble, explanation, or markdown formatting."""
         if hasattr(block, "text"):
             full_text += block.text
 
-    print("Raw response preview:")
-    print(full_text[:1000])
-
-    # Try to extract JSON array from anywhere in the response
     try:
         clean = full_text.strip().replace("```json", "").replace("```", "").strip()
-        # Find the first [ and last ] to extract just the array
         start = clean.find("[")
         end = clean.rfind("]") + 1
         if start != -1 and end > start:
-            json_str = clean[start:end]
-            events = json.loads(json_str)
-            print(f"Successfully parsed {len(events)} events.")
-        else:
-            print("No JSON array found in response.")
-            events = []
-    except json.JSONDecodeError as e:
-        print(f"JSON parse error: {e}")
-        print("Full response:")
-        print(full_text)
-        events = []
+            return json.loads(clean[start:end])
+    except Exception as e:
+        print(f"Parse error: {e}")
+    return []
 
-    return events
+def search_events():
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    upcoming = get_upcoming_weekend_dates()
+    weekend_dates_str = ", ".join(d.strftime("%A, %B %-d, %Y") for d in upcoming)
+    date_range = get_date_range_string()
+    dj_list = ", ".join(DJS)
+    venue_list = ", ".join(VENUES_AND_PROMOTERS)
+
+    # Run multiple targeted searches for better coverage
+    searches = [
+        f"Priority venues and promoters: {venue_list}. Search each venue's website, Instagram, and RA page for daytime weekend events.",
+        f"Priority DJs: {dj_list}. Search for any NYC appearances by these artists on upcoming weekends.",
+        f"General NYC daytime dance music: search Resident Advisor ra.co for NYC events, Dice.fm, and NYC event blogs for daytime house, disco, soul parties on upcoming weekends.",
+    ]
+
+    all_events = []
+    seen = set()
+
+    for focus in searches:
+        print(f"Running search: {focus[:60]}...")
+        results = run_search(client, focus, date_range, weekend_dates_str)
+        for e in results:
+            # Deduplicate by name+date
+            key = (e.get("name", "").lower().strip(), e.get("date", "").strip())
+            if key not in seen:
+                seen.add(key)
+                all_events.append(e)
+
+    # Filter out past events
+    today = datetime.today().date()
+    all_events = [e for e in all_events if is_future_event(e.get("date", ""))]
+
+    print(f"Total unique future events found: {len(all_events)}")
+    return all_events
 
 # ── Email builder ─────────────────────────────────────────────────────────────
+def sort_events_by_date(events):
+    """Sort events chronologically."""
+    def sort_key(e):
+        d = parse_event_date(e.get("date", ""))
+        t_str = e.get("start_time", "12:00 PM")
+        try:
+            t = datetime.strptime(t_str.strip(), "%I:%M %p").time()
+        except:
+            try:
+                t = datetime.strptime(t_str.strip(), "%I %p").time()
+            except:
+                t = datetime.min.time()
+        return (d or datetime.max.date(), t)
+    return sorted(events, key=sort_key)
+
 def group_by_date(events):
     grouped = {}
     for e in events:
         date = e.get("date", "Unknown Date")
         grouped.setdefault(date, []).append(e)
-    return dict(sorted(grouped.items()))
+    return grouped
 
 def build_html_email(events):
-    grouped = group_by_date(events)
     date_range = get_date_range_string()
 
     if not events:
         body = "<p>No matching events found this week. Check back next Wednesday!</p>"
     else:
+        # Sort all events chronologically first
+        sorted_events = sort_events_by_date(events)
+        # Then group by date (preserving order)
+        grouped = {}
+        for e in sorted_events:
+            date = e.get("date", "Unknown Date")
+            grouped.setdefault(date, []).append(e)
+
         sections = []
         for date, day_events in grouped.items():
-            # Sort: high priority first
-            day_events.sort(key=lambda e: 0 if e.get("priority") == "high" else 1)
             cards = []
             for e in day_events:
                 outdoor_badge = (
@@ -161,26 +217,24 @@ def build_html_email(events):
 
         body = "".join(sections)
 
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head><meta charset="UTF-8"></head>
-    <body style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px;background:#f9f9f9;color:#111;">
+    html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px;background:#f9f9f9;color:#111;">
 
-        <div style="background:#111;color:#fff;padding:20px 24px;border-radius:8px;margin-bottom:24px;">
-            <div style="font-size:22px;font-weight:900;letter-spacing:-0.5px;">🎶 NYC Music Events</div>
-            <div style="font-size:13px;color:#aaa;margin-top:4px;">House · Disco · Soul · Detroit &nbsp;|&nbsp; {date_range}</div>
-        </div>
+    <div style="background:#111;color:#fff;padding:20px 24px;border-radius:8px;margin-bottom:24px;">
+        <div style="font-size:22px;font-weight:900;letter-spacing:-0.5px;">🎶 NYC Music Events</div>
+        <div style="font-size:13px;color:#aaa;margin-top:4px;">House · Disco · Soul · Detroit &nbsp;|&nbsp; {date_range}</div>
+    </div>
 
-        {body}
+    {body}
 
-        <div style="margin-top:32px;font-size:12px;color:#999;text-align:center;border-top:1px solid #e0e0e0;padding-top:16px;">
-            Sent every Wednesday. Daytime weekend events only.
-        </div>
+    <div style="margin-top:32px;font-size:12px;color:#999;text-align:center;border-top:1px solid #e0e0e0;padding-top:16px;">
+        Sent every Wednesday. Daytime weekend events only.
+    </div>
 
-    </body>
-    </html>
-    """
+</body>
+</html>"""
     return html
 
 # ── Send email ────────────────────────────────────────────────────────────────
@@ -188,7 +242,6 @@ def send_email(html_body, event_count):
     resend.api_key = os.environ["RESEND_API_KEY"]
     date_range = get_date_range_string()
     subject = f"NYC Music Events: {date_range} ({event_count} found)"
-
     resend.Emails.send({
         "from": FROM_EMAIL,
         "to": TO_EMAIL,
