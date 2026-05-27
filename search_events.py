@@ -84,21 +84,19 @@ If you find no events return []."""
 
     events = extract_json(full_text)
 
-    # Fallback: ask Claude to reformat if it returned prose
-    if events is None:
-        print("Reformatting...")
-        reformat = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=4000,
-            messages=[
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": full_text},
-                {"role": "user", "content": "Output ONLY the JSON array of events. Start with [ and end with ]. No other text."}
-            ]
-        )
-        reformat_text = "".join(b.text for b in reformat.content if hasattr(b, "text"))
-        print("Reformat preview:", reformat_text[:300])
-        events = extract_json(reformat_text) or []
+   # Fallback: ask Claude to reformat if it returned prose
+if events is None:
+    print("Reformatting...")
+    reformat = client.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=4000,
+        messages=[
+            {"role": "user", "content": "Convert the following event listing text into a JSON array. Output ONLY the JSON array. Start with [ and end with ]. No other text.\n\n" + full_text[:8000]}
+        ]
+    )
+    reformat_text = "".join(b.text for b in reformat.content if hasattr(b, "text"))
+    print("Reformat preview:", reformat_text[:300])
+    events = extract_json(reformat_text) or []
 
     events = [e for e in events if (parse_event_date(e.get("date","")) or today) >= today]
     print(f"Found {len(events)} future events.")
