@@ -1,0 +1,96 @@
+search_keywords:
+  - New York City
+  - NYC
+  - Brooklyn
+  - DJ
+  - house music
+  - dance
+
+explicit_sources:
+  - Resident Advisor NYC weekend daytime dance music events
+  - Dice NYC weekend daytime DJ house music events
+  - Nowadays NYC events weekend daytime
+  - Public Records Brooklyn events weekend daytime
+  - Knockdown Center events weekend daytime
+  - Elsewhere Brooklyn events weekend daytime DJ
+  - House of Yes Brooklyn daytime dance party
+  - Mister Sunday NYC events
+  - Soul in the Horn NYC events
+  - ReSolute NYC events
+
+additional_searches:
+  - Saturday daytime DJ Brooklyn
+  - Sunday dance NYC
+  - Outdoor DJ Brooklyn
+  - House music NYC weekend
+  - NYC park DJ dance party weekend
+  - Brooklyn rooftop DJ daytime weekend
+
+priority_djs:
+  - Danny Krivit
+  - Theo Parrish
+  - Moodymann
+  - Moodyman
+  - Kenny Dixon Junior
+  - Timmy Regisford
+  - Louie Vega
+  - Little Louie Vega
+  - Joe Claussell
+  - Joaquin Joe Claussell
+  - Tony Humphries
+  - Eli Escobar
+  - Justin Carter
+  - Eamon Harkin
+  - Kai Alce
+  - Francois K
+  - François K
+  - DJ Spinna
+  - Motor City Drum Ensemble
+  - Move D
+  - Larry Heard
+  - Mr. Fingers
+  - Mike Huckaby
+  - Rick Wade
+  - Soul Summit
+  - Saint James Joy
+  - Ali Coleman
+  - Anane
+  - Anané
+
+priority_venues_promoters:
+  - Nowadays
+  - Public Records
+  - Knockdown Center
+  - 718 Sessions
+  - Mister Sunday
+  - Shelter
+  - Soul in the Horn
+  - ReSolute
+  - Refuge
+  - Under the K Bridge
+  - Prospect Park
+  - Central Park
+  - Brooklyn Bridge Park
+  - Elsewhere
+  - House of Yes
+
+nyc_neighborhood_hints:
+  - Manhattan
+  - Brooklyn
+  - Queens
+  - Bronx
+  - Staten Island
+  - Williamsburg
+  - Bushwick
+  - Greenpoint
+  - Gowanus
+  - Ridgewood
+  - Long Island City
+  - Lower East Side
+  - East Village
+  - Harlem
+  - Downtown Brooklyn
+  - Red Hook
+  - Dumbo
+  - Bed-Stuy
+  - Crown Heights

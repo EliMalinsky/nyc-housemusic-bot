@@ -1,0 +1,4 @@
+openai>=1.59.0
+resend>=2.4.0
+PyYAML>=6.0.2
+python-dateutil>=2.9.0
